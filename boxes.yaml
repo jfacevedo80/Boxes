@@ -119,7 +119,7 @@ wifi:
 captive_portal: 
 
 dashboard_import:
-  package_import_url: github://jfacevedo80/Boxes/boxes.yaml
+  package_import_url: github://jfacevedo80/Boxes/master/boxes.yaml
 
 improv_serial:
 
