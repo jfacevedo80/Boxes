@@ -1,15 +1,15 @@
 substitutions:
-  devicename: box01
+  name: box01
   friendly_name: Box1
 
 esphome:
-  name: $devicename
+  name: $name
   platform: ESP32
   board: nodemcu-32s
   name_add_mac_suffix: false
   project:
     name: jfacevedo80.boxes
-    version: "1.0"
+    version: "1.1"
 
   on_boot:
     priority: -10
@@ -537,7 +537,7 @@ text_sensor:
             JsonObject root = doc.as<JsonObject>();
             for (JsonPair item : root) {
               const char* clave = item.key().c_str();
-              if (strcmp(clave, "master") == 0 || strcmp(clave, "${devicename}") == 0){
+              if (strcmp(clave, "master") == 0 || strcmp(clave, "${name}") == 0){
                 JsonArray val = item.value().as<JsonArray>();
                 for(JsonVariant v : val) {
                   id(keycodes).push_back(v.as<const char*>());
@@ -556,7 +556,7 @@ text_sensor:
             JsonObject root = doc.as<JsonObject>();
             for (JsonPair item : root) {
               const char* clave = item.key().c_str();
-              if (strcmp(clave, "master") == 0 || strcmp(clave, "${devicename}") == 0){
+              if (strcmp(clave, "master") == 0 || strcmp(clave, "${name}") == 0){
                 JsonArray val = item.value().as<JsonArray>();
                 for(JsonVariant v : val) {
                   id(cardcodes).push_back(v.as<const char*>());
