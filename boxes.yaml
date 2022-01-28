@@ -247,7 +247,7 @@ pn532_i2c:
   id: pn532_board
   on_tag:
     then:
-    - homeassistant.tag_scanned: !lambda |
+    - homeassistant.tag_scanned: !lambda |-
         if (!tag.has_ndef_message()) {
           return x;
         }
