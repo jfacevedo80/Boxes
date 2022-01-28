@@ -1,0 +1,725 @@
+substitutions:
+  devicename: box01
+  friendly_name: Box1
+
+esphome:
+  name: $devicename
+  platform: ESP32
+  board: nodemcu-32s
+  name_add_mac_suffix: false
+  project:
+    name: jfacevedo80.boxes
+    version: "1.0"
+
+  on_boot:
+    priority: -10
+    then:
+    - wait_until:
+        api.connected:
+    - logger.log: El Box se conectó al API!
+    - switch.turn_on: led_enabled
+    - light.turn_on:
+        id: activity_led
+        brightness: 100%
+        red: 0%
+        green: 0%
+        blue: 100%
+        flash_length: 500ms
+    - wait_until:
+        lambda: |-
+          return id(nxxt).is_setup();
+    - lambda: |-
+        id(nxxt).send_command_printf("play %d,%d,%d",0,2,0);
+    - lambda: |-
+        id(pinresp).update();
+        id(instapin).update();
+
+web_server:
+  port: 80
+
+globals:
+  - id: keycodes
+    type: std::vector<std::string>
+    restore_value: false
+  - id: cardcodes
+    type: std::vector<std::string>
+    restore_value: false
+  - id: ultEst
+    type: std::string
+    restore_value: false
+    initial_value: ''
+  - id: ePant
+    type: boolean
+    initial_value: 'true'
+
+time:
+  - platform: homeassistant
+    timezone: 'std 3'
+    id: hora
+    on_time_sync:
+      then:
+        - logger.log: "Se sincronizó la hora del sistema"
+        - wait_until:
+            lambda: |-
+              return id(nxxt).is_setup();
+        - lambda: |-
+            auto time = id(hora).now();
+            id(nxxt).set_nextion_rtc_time(time);
+        - logger.log: "Actualizo la hora en Nextion"    
+
+display:
+  - platform: nextion
+    uart_id: uart_2  
+    id: nxxt
+    auto_wake_on_touch: true
+    tft_url: 'https://server-iot.e-generar.com.ar:8123/local/tft/boxes.tft'
+    touch_sleep_timeout: 300
+    wake_up_page: 0
+    on_wake:
+      then:
+        lambda: |-
+          if(id(pagAct).state!=2 && id(blind).position == COVER_OPEN) {
+            id(nxxt)->goto_page("2");
+          }
+    lambda: |-
+      it.send_command_printf("eWifi=%d",id(wf).is_connected());
+
+logger:
+
+api:
+  password: ""
+  services:
+    - service: update_nextion
+      then:
+        - lambda: 'id(nxxt)->upload_tft();'
+
+ota:
+  password: ""
+
+uart:
+  id: uart_2
+  rx_pin: 16
+  tx_pin: 17
+  baud_rate: 115200 
+
+wifi:
+  networks:
+    - ssid: !secret wifi_ssid_iot
+      password: !secret wifi_password_iot
+    - ssid: !secret wifi_ssid_aju
+      password: !secret wifi_password_aju
+    - ssid: !secret wifi_ssid_ajudf
+      password: !secret wifi_password_ajudf
+  id: wf
+
+  ap:
+    ssid: "${friendly_name} Fallback Hotspot"
+    password: "12345678"
+
+captive_portal: 
+
+dashboard_import:
+  package_import_url: github://jfacevedo80/boxes/boxes.yaml
+
+improv_serial:
+
+switch:
+  - platform: template
+    name: "${friendly_name} LED Habilitado"
+    id: led_enabled
+    icon: mdi:alarm-light-outline
+    optimistic: true
+    restore_state: true
+    entity_category: config  
+  - platform: gpio
+    id: Box1Toma
+    pin: 26
+    name: ${friendly_name} Toma
+    inverted: True
+    restore_mode: RESTORE_DEFAULT_ON     
+  - platform: gpio
+    id: PersParar
+    pin: 27
+    inverted: true
+    internal: true
+    on_turn_on:
+      - delay: 750ms
+      - switch.turn_off: PersParar
+    on_turn_off:
+      - switch.turn_off: bstop
+  - platform: gpio
+    id: PersSubir
+    pin: 14
+    inverted: true
+    internal: true
+    on_turn_on:
+      then:
+        - switch.turn_on: bup
+    on_turn_off:
+      then:
+        - switch.turn_off: bup
+  - platform: gpio
+    id: PersBajar
+    pin: 13
+    inverted: true
+    internal: true
+    on_turn_on:
+      then:
+        - switch.turn_on: bdown
+    on_turn_off:
+      then:
+        - switch.turn_off: bdown
+  - platform: nextion
+    id: bli
+    nextion_id: nxxt
+    name: "Luz Interior"
+    component_name: page3.bli
+    internal: true
+    on_turn_on:
+      then:
+        - light.turn_on: LuzInt
+    on_turn_off:
+      then:
+        - light.turn_off: LuzInt
+  - platform: nextion
+    id: ble
+    nextion_id: nxxt
+    name: "Luz Exterior"
+    component_name: page3.ble
+    internal: true
+    on_turn_on:
+      then:
+        - light.turn_on: LuzExt
+    on_turn_off:
+      then:
+        - light.turn_off: LuzExt
+  - platform: nextion
+    id: bup
+    nextion_id: nxxt
+    name: "Botón Arriba"
+    component_name: page2.bup
+    internal: true
+    on_turn_on:
+      then:
+        - cover.open: blind
+    on_turn_off:
+      then:
+        - cover.stop: blind
+  - platform: nextion
+    id: bstop
+    nextion_id: nxxt
+    name: "Botón Parar"
+    component_name: page2.bstop
+    internal: true
+    on_turn_on:
+      then:
+      - cover.stop: blind        
+  - platform: nextion
+    id: bdown
+    nextion_id: nxxt
+    name: "Botón Abajo"
+    component_name: page2.bdown
+    internal: true
+    on_turn_on:
+      then:
+        - cover.close: blind
+    on_turn_off:
+      then:
+        - cover.stop: blind
+  - platform: nextion
+    nextion_id: nxxt
+    id: breset
+    name: "${friendly_name} Reset"
+    component_name: breset
+    internal: true
+    on_turn_on:
+      then:
+        - logger.log: Se presionó el botón
+        - button.press: swrestart
+
+i2c:
+  sda: 21
+  scl: 22
+  scan: false
+  frequency: 400kHz
+
+pn532_i2c:
+  id: pn532_board
+  on_tag:
+    then:
+    - homeassistant.tag_scanned: !lambda |
+        if (!tag.has_ndef_message()) {
+          return x;
+        }
+        auto message = tag.get_ndef_message();
+        auto records = message->get_records();
+        for (auto &record : records) {
+          std::string payload = record->get_payload();
+          size_t pos = payload.find("https://www.home-assistant.io/tag/");
+          if (pos != std::string::npos) {
+            return payload.substr(pos + 34);
+          }
+        }
+        return x;
+    - lambda: |-
+        auto y=x;
+        auto codes = id(cardcodes);
+        auto call = id(blind).make_call();
+
+        for (int i = 0; i < codes.size(); i++){
+          if(codes[i]==y) {
+            id(pinresp).set_state(3,true,true);
+            id(lastcode).publish_state(x);
+            id(c_ok).execute();
+            break;
+          }
+        }
+        if(id(pinresp).state==0) {
+          id(pinresp).set_state(-3,true,true);
+          id(c_ko).execute();
+        }                
+        
+output:
+  - platform: gpio
+    pin: 32
+    id: luz_int
+    inverted: True
+  - platform: gpio
+    pin: 33
+    id: luz_ext
+    inverted: True
+    
+binary_sensor:
+  - platform: gpio
+    id: close_endstop
+    pin:
+      number: 5
+      mode: INPUT_PULLUP
+      inverted: false
+    name: ${friendly_name} Contacto
+    device_class: door
+    filters:
+      delayed_off: 2s
+  - platform: status
+    name: "${friendly_name} Estado"
+
+sensor:
+  - platform: dht
+    pin: 25
+    temperature:
+      name: ${friendly_name} Temperatura
+      id: sTemp
+      on_value:
+        then:
+          - lambda: |-
+              id(temp).set_state(x,true,true);     
+    humidity:
+      name: ${friendly_name} Humedad
+      id: sHume
+      on_value:
+        then:
+          - lambda: |-
+              id(hume).set_state(x,true,true);     
+    update_interval: 60s
+  - platform: wifi_signal
+    name: "${friendly_name} Señal"
+    update_interval: 60s
+    id: wRSSI
+    on_value:
+      then:
+        - lambda: |-
+            std::string val;
+            char buffer[20];
+            int n;
+            n=sprintf(buffer, "%.1f dB", x);
+            val = buffer;
+            id(nxxt).send_command_printf("page4.ssignal.txt=\"%s\"",val.c_str());
+
+  - platform: uptime
+    name: "${friendly_name} Tiempo de Actividad"
+    entity_category: diagnostic
+    on_value:
+      then:
+        - wait_until:
+            lambda: |-
+              return id(nxxt).is_setup();
+        - lambda: |-
+            id(nxxt).send_command_printf("page4.stac.val=%.0f",x);
+  - platform: nextion
+    id: pagAct
+    nextion_id: nxxt
+    variable_name: pagAct
+    internal: true
+  - platform: nextion
+    id: pinresp
+    nextion_id: nxxt
+    variable_name: pinresp
+    internal: true
+  - platform: nextion
+    id: eBlind
+    nextion_id: nxxt
+    variable_name: eBlind
+    internal: true
+  - platform: nextion
+    id: temp
+    nextion_id: nxxt
+    component_name: page3.temp
+    precision: 1
+    internal: true
+  - platform: nextion
+    id: hume
+    nextion_id: nxxt
+    component_name: page3.hume
+    precision: 1
+    internal: true
+  
+light:
+  - platform: binary
+    name: ${friendly_name} Luz Interior
+    output: luz_int
+    id: LuzInt
+    on_turn_on:
+      then:
+        - switch.turn_on: bli
+    on_turn_off:
+      then:
+        - switch.turn_off: bli
+  - platform: binary
+    name: ${friendly_name} Luz Exterior
+    output: luz_ext
+    id: LuzExt
+    on_turn_on:
+      then:
+        - switch.turn_on: ble
+    on_turn_off:
+      then:
+        - switch.turn_off: ble
+  - platform: fastled_clockless
+    chipset: WS2812
+    pin: 23                             
+    num_leds: 1
+    flash_transition_length: 500ms
+    rgb_order: GRB
+    id: activity_led
+    restore_mode: ALWAYS_OFF
+    internal: true
+
+cover:
+  #- platform: endstop
+  - platform: time_based
+    id: blind
+    name: "${friendly_name} Persiana"
+    open_action:
+      - logger.log: "Subiendo persiana..."
+      - script.execute: Sube
+    open_duration: 48s
+    #open_endstop: open_endstop
+    close_action:
+      - logger.log: "Bajando persiana..."
+      - script.execute: Baja
+    close_duration: 48s
+    #close_endstop: close_endstop
+    has_built_in_endstop: true
+    stop_action:
+      - logger.log: "Deteniendo Persiana..."
+      - script.execute: Para
+    on_open:
+      - logger.log: "Persiana Abierta"
+      - switch.turn_off: PersSubir
+      - lambda: |-
+          int pos = id(blind).position * 100;
+          id(eBlind).set_state(pos,true,true);
+    on_closed:
+      - logger.log: "Persiana Cerrada"
+      - switch.turn_off: PersBajar
+      - lambda: |-
+          int pos = id(blind).position * 100;
+          id(eBlind).set_state(pos,true,true);
+
+text_sensor:
+  - platform: version
+    id: espver
+    hide_timestamp: true
+    name: "${friendly_name} ESPHome Version"
+    entity_category: diagnostic
+    on_value:
+      then:
+        - wait_until:
+            lambda: |-
+              return id(nxxt).is_setup();
+        - lambda: |-
+            id(nxxt).send_command_printf("page4.sespver.txt=\"%s\"",x.c_str());
+  - platform: wifi_info
+    ip_address:
+      id: wIP
+      internal: true
+      on_value:
+        then:
+          - wait_until:
+              lambda: |-
+                return id(nxxt).is_setup();
+          - lambda: |-
+              id(nxxt).send_command_printf("page4.sip.txt=\"%s\"",x.c_str());
+    ssid:
+      id: wSSID
+      internal: true
+      on_value:
+        then:
+          - wait_until:
+              lambda: |-
+                return id(nxxt).is_setup();
+          - lambda: |-
+              id(nxxt).send_command_printf("page4.sssid.txt=\"%s\"",x.c_str());
+    mac_address:
+      id: wMAC
+      internal: true
+      on_value:
+        then:
+          - wait_until:
+              lambda: |-
+                return id(nxxt).is_setup();
+          - lambda: |-
+              id(nxxt).send_command_printf("page4.smac.txt=\"%s\"",x.c_str());
+  - platform: template
+    name: "${friendly_name} última Clave o Tarjeta"
+    id: lastcode
+  - platform: nextion
+    id: instapin
+    component_name: page4.instapin
+    internal: true
+    on_value:
+      then:
+        lambda: |-
+          if(x=="") {
+            ESP_LOGI("nextion", "El pin del instalador está vacío. Se va a setear... [%s]",x.c_str());
+            id(instapin).set_state("180808",false,true);
+          } else {
+            ESP_LOGI("nextion", "El pin del instalador es... [%s]",x.c_str());
+          }  
+  - platform: nextion
+    id: sespver
+    component_name: page4.sespver
+    internal: true    
+    on_value:
+      then:
+        - lambda: |-
+            ESP_LOGI("JFA", "Version [%s]",x.c_str());
+  - platform: nextion
+    id: pin
+    component_name: page1.pin
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            auto y=x;
+            auto codes = id(keycodes);
+            for (int i = 0; i < codes.size(); i++){
+              if(codes[i]==y) {
+                id(pinresp).set_state(2,true,true);
+                id(lastcode).publish_state(x);
+                id(c_ok).execute(); 
+                break;
+              }
+            }
+            if(id(pinresp).state==0) {
+              id(pinresp).set_state(-2,true,true);
+              id(c_ko).execute();
+            }
+  - platform: homeassistant
+    id: "keycodes_ha"
+    entity_id: input_text.keycodes
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            DynamicJsonDocument doc(1024);
+            deserializeJson(doc, x);
+            JsonObject root = doc.as<JsonObject>();
+            for (JsonPair item : root) {
+              const char* clave = item.key().c_str();
+              if (strcmp(clave, "master") == 0 || strcmp(clave, "${devicename}") == 0){
+                JsonArray val = item.value().as<JsonArray>();
+                for(JsonVariant v : val) {
+                  id(keycodes).push_back(v.as<const char*>());
+                }
+              }
+            }          
+  - platform: homeassistant
+    id: "cardcodes_ha"
+    entity_id: input_text.cardcodes
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            DynamicJsonDocument doc(1024);
+            deserializeJson(doc, x);
+            JsonObject root = doc.as<JsonObject>();
+            for (JsonPair item : root) {
+              const char* clave = item.key().c_str();
+              if (strcmp(clave, "master") == 0 || strcmp(clave, "${devicename}") == 0){
+                JsonArray val = item.value().as<JsonArray>();
+                for(JsonVariant v : val) {
+                  id(cardcodes).push_back(v.as<const char*>());
+                }
+              }
+            }          
+
+script:
+  - id: Para
+    mode: single
+    then:
+      - if:
+          condition:
+            - script.is_running: Baja
+          then:
+            - script.stop: Baja
+      - if:
+          condition:
+            - script.is_running: Sube
+          then:
+            - script.stop: Sube
+      - switch.turn_on: PersParar
+      - if:
+          condition:
+            - switch.is_on: PersBajar
+          then:
+            - switch.turn_off: PersBajar
+      - if:
+          condition:
+            - switch.is_on: PersSubir
+          then:
+            - switch.turn_off: PersSubir
+  - id: Sube
+    mode: single
+    then:
+      - if:
+          condition:
+            - script.is_running: Baja
+          then:
+            - script.stop: Baja
+      - switch.turn_on: PersParar
+      - delay: 750ms
+      - switch.turn_on: PersSubir
+      - script.execute: Posi
+  - id: Baja
+    mode: single
+    then:
+      - if:
+          condition:
+            - script.is_running: Sube
+          then:
+            - script.stop: Sube
+      - switch.turn_on: PersParar
+      - delay: 750ms
+      - switch.turn_on: PersBajar
+      - script.execute: Posi
+  - id: Posi
+    mode: restart
+    then:
+      - while:
+          condition:
+            - lambda: |-
+                if (id(blind).current_operation == CoverOperation::COVER_OPERATION_IDLE) {
+                  return false;
+                } else if (id(blind).current_operation == CoverOperation::COVER_OPERATION_OPENING) {
+                  return true;
+                } else if (id(blind).current_operation == CoverOperation::COVER_OPERATION_CLOSING) {
+                  return true;
+                } else {
+                  return false;
+                }
+          then:
+          - delay: 1000ms
+          - lambda: |-
+              int pos = id(blind).position * 100;
+              id(eBlind).set_state(pos,false,true);
+  - id: c_ok
+    mode: single
+    then:
+    - logger.log: "Código correcto"  
+    - if:
+        condition:
+          lambda: |-
+            return id(nxxt).is_sleeping();
+        then:
+          lambda: |-
+            id(nxxt)->sleep(false);
+    - lambda: |-
+        if(id(pagAct).state==0){
+          id(nxxt)->goto_page("1");
+        }
+        id(nxxt).send_command_printf("play %d,%d,%d",0,0,0);
+    - if:
+        condition:
+          switch.is_on: led_enabled
+        then:
+        - light.turn_on:
+            id: activity_led
+            brightness: 100%
+            red: 0%
+            green: 100%
+            blue: 0%
+            flash_length: 500ms
+    - lambda: |-
+        auto call = id(blind).make_call();
+        if(id(pagAct).state!=2) {
+          id(nxxt)->goto_page("2");
+        }
+        if (id(blind).position == COVER_OPEN) {
+          call.set_command_close();
+          call.perform();
+          id(ultEst)="Baja";
+        } else if (id(blind).position == COVER_CLOSED) {
+          call.set_command_open();
+          call.perform();
+          id(ultEst)="Sube";
+        } else if (id(blind).current_operation == CoverOperation::COVER_OPERATION_OPENING) {
+          call.set_command_stop();
+          call.perform();
+        } else if (id(blind).current_operation == CoverOperation::COVER_OPERATION_CLOSING) {
+          call.set_command_stop();
+          call.perform();
+        } else {
+          if(id(ultEst)=="Sube"){
+            call.set_command_close();
+            call.perform();
+          } else if(id(ultEst)=="Baja") {
+            call.set_command_open();
+            call.perform();
+          } else {
+            call.set_command_open();
+            call.perform();
+          }
+        } 
+  - id: c_ko
+    mode: single
+    then:
+    - if:
+        condition:
+          lambda: |-
+            return id(nxxt).is_sleeping();
+        then:
+          lambda: |-
+            id(nxxt)->sleep(false);    
+    - lambda: |-
+        if(id(pagAct).state==0){
+          id(nxxt)->goto_page("1");
+        }
+        id(nxxt).send_command_printf("play %d,%d,%d",0,1,0);
+    - if:
+        condition:
+          switch.is_on: led_enabled
+        then:
+        - light.turn_on:
+            id: activity_led
+            brightness: 100%
+            red: 100%
+            green: 0%
+            blue: 0%
+            flash_length: 500ms
+
+button:
+  - platform: restart
+    id: swrestart
+    name: "${friendly_name} Reinicio"
+
