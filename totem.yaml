@@ -1,0 +1,325 @@
+substitutions:
+  name: totem
+  friendly_name: Totem
+
+wifi:
+  networks:
+    - ssid: !secret wifi_ssid_iot
+      password: !secret wifi_password_iot
+  id: wf
+  ap:
+    ssid: "Totem Fallback Hotspot"
+    password: "12348765"
+
+
+esphome:
+  name: $name
+  platform: ESP32
+  board: nodemcu-32s
+  project:
+    name: jfacevedo80.totem
+    version: "1.0"
+
+web_server:
+  port: 80
+
+globals:
+  - id: keycodes
+    type: std::vector<std::string>
+    restore_value: false
+  - id: cardcodes
+    type: std::vector<std::string>
+    restore_value: false
+
+logger:
+  # level: VERY_VERBOSE
+  # level: VERBOSE
+
+api:
+
+ota:
+
+captive_portal:
+
+dashboard_import:
+  package_import_url: github://jfacevedo80/Boxes/totem.yaml
+
+improv_serial:
+
+switch:
+  - platform: gpio
+    id: toma1         #r2
+    name: "${friendly_name} Extractor"
+    icon: mdi:fan
+    pin: 26
+    inverted: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    pin: 27
+    inverted: true
+    id: abre_porton   #r3
+    internal: true
+    on_turn_on:
+    - delay: 500ms
+    - switch.turn_off: abre_porton
+
+  - platform: gpio
+    pin: 14
+    inverted: true
+    id: cierra_porton #r4
+    internal: true
+    on_turn_on:
+    - delay: 500ms
+    - switch.turn_off: cierra_porton
+
+output:
+  - platform: gpio
+    pin: 25
+    id: luz_totem     #r1
+    inverted: true
+
+binary_sensor:
+  - platform: status
+    name: "${friendly_name} Status"
+    entity_category: diagnostic
+  - platform: gpio
+    pin:
+      number: 19
+      #inverted: true
+      mode: INPUT_PULLUP
+    name: "${friendly_name} Sensor Apertura"
+    id: open_endstop
+    device_class: door    
+  - platform: gpio
+    pin:
+      number: 21
+      #inverted: true
+      mode: INPUT_PULLUP
+    name: "${friendly_name} Sensor Cierre"
+    id: close_endstop
+    device_class: door    
+
+script:
+  - id: c_ok
+    mode: single
+    then:
+      - if:
+          condition:
+            binary_sensor.is_on: close_endstop
+          then:
+            - cover.open: porton
+            - logger.log: "Abriendo el porton"
+    
+text_sensor:
+  - platform: version
+    hide_timestamp: true
+    name: "${friendly_name} ESPHome Version"
+    entity_category: diagnostic
+  - platform: template
+    name: "${friendly_name} última Clave o Tarjeta"
+    id: lastcode
+  - platform: homeassistant
+    id: codi
+    entity_id: sensor.enous_codi
+    name: Códigos
+    attribute: Codi
+    on_value:
+      then:
+        - lambda: |-
+            DynamicJsonDocument doc(1024);
+            deserializeJson(doc, x);
+            JsonObject root = doc.as<JsonObject>();
+            id(keycodes).clear();
+            for (JsonPair item : root) {
+              const char* clave = item.key().c_str();
+              if (strcmp(clave, "${name}") == 0){
+                JsonArray val = item.value().as<JsonArray>();
+                for(JsonVariant v : val) {
+                  std::string newCode = v.as<const char*>();
+                  if (std::find(id(keycodes).begin(), id(keycodes).end(), newCode) == id(keycodes).end()) {
+                      id(keycodes).push_back(newCode);
+                  }
+                }
+              }
+            }    
+  - platform: homeassistant
+    id: tarj
+    entity_id: sensor.enous_codi
+    name: Tarjetas
+    attribute: Tarj
+    on_value:
+      then:
+        - lambda: |-
+            DynamicJsonDocument doc(1024);
+            deserializeJson(doc, x);
+            JsonObject root = doc.as<JsonObject>();
+            id(cardcodes).clear();
+            for (JsonPair item : root) {
+              const char* clave = item.key().c_str();
+              if (strcmp(clave, "${name}") == 0){
+                JsonArray val = item.value().as<JsonArray>();
+                for(JsonVariant v : val) {
+                  std::string newCode = v.as<const char*>();
+                  if (std::find(id(cardcodes).begin(), id(cardcodes).end(), newCode) == id(cardcodes).end()) {
+                      id(cardcodes).push_back(newCode);
+                  }
+                }
+              }
+            }
+
+light:
+  - platform: binary
+    name: ${friendly_name} Luz Totem
+    restore_mode: RESTORE_DEFAULT_OFF 
+    output: luz_totem
+    id: LuzTotem
+  
+sensor:
+  - platform: dht
+    pin: 13
+    model: DHT22
+    temperature:
+      name: "${friendly_name} Temperatura"
+      id: sTemp
+      filters:
+        - calibrate_linear:
+            # Map 0.0 (from sensor) to 0.0 (true value)
+            - 0.0 -> 0.0
+            - 31.6 -> 25.0      
+    humidity:
+      name: "${friendly_name} Humedad"
+      id: sHume
+      filters:
+        - calibrate_linear:
+          # Map 0.0 (from sensor) to 0.0 (true value)
+          - 0.0 -> 0.0
+          - 54.1 -> 50.0      
+    update_interval: 60s
+  - platform: wifi_signal
+    name: "${friendly_name} Señal"
+    update_interval: 60s
+    id: wRSSI
+    entity_category: diagnostic       
+  - platform: uptime
+    name: "${friendly_name} Tiempo de Actividad"
+    entity_category: diagnostic
+    
+
+button:
+  - platform: restart
+    id: swrestart
+    name: "${friendly_name} Reinicio"
+  - platform: safe_mode
+    name: ${friendly_name} Modo Seguro
+    entity_category: diagnostic    
+
+wiegand:
+  - id: mykeypad
+    d0: GPIO17
+    d1: GPIO16
+    on_tag:
+      - homeassistant.tag_scanned: !lambda |
+          uint32_t tag_value = strtoul(x.c_str(), NULL, 10);
+          char buffer[12];
+          snprintf(buffer, sizeof(buffer), "%02X-%02X-%02X-%02X",(tag_value >> 24) & 0xFF, (tag_value >> 16) & 0xFF, (tag_value >> 8) & 0xFF, tag_value & 0xFF);
+          std::string y = std::string(buffer);
+          return y.c_str();
+
+      - lambda: |-
+          uint32_t tag_value = strtoul(x.c_str(), NULL, 10);
+          char buffer[12];
+          snprintf(buffer, sizeof(buffer), "%02X-%02X-%02X-%02X",(tag_value >> 24) & 0xFF, (tag_value >> 16) & 0xFF, (tag_value >> 8) & 0xFF, tag_value & 0xFF);
+          std::string y = std::string(buffer);
+          auto codes = id(cardcodes);
+          bool tagFound = false;
+          for (int i = 0; i < codes.size(); i++){
+            if(codes[i]==y) {
+              id(lastcode).publish_state(y);
+              id(c_ok).execute();
+              ESP_LOGI("TAG", "El tag: %s está autorizado", y.c_str());   
+              tagFound = true;
+              break;
+            }
+          }
+          if (!tagFound) {
+            ESP_LOGI("TAG", "El tag: %s no está autorizado", y.c_str());   
+          }
+    # on_raw:
+    #   - lambda: ESP_LOGI("RAW", "received raw %d bits, value %llx", bits, value);
+
+key_collector:
+  - id: pincode_reader
+    source_id: mykeypad
+    min_length: 6
+    max_length: 6
+    end_keys: "#"
+    end_key_required: true
+    back_keys: "*"
+    clear_keys: "C"
+    allowed_keys: "0123456789"
+    timeout: 5s
+    on_result:
+      - homeassistant.tag_scanned: !lambda |-
+          return x.c_str();
+      - lambda: |-
+          auto y=x;
+          auto codes = id(keycodes);
+          bool tagFound = false;
+          for (int i = 0; i < codes.size(); i++){
+            if(codes[i]==y) {
+              id(lastcode).publish_state(x);
+              id(c_ok).execute();
+              ESP_LOGI("TAG", "El código: %s está autorizado", y.c_str());   
+              tagFound = true;
+              break;
+            }
+          }
+          if (!tagFound) {
+            ESP_LOGI("TAG", "El código: %s no está autorizado", y.c_str());   
+          }
+
+    on_timeout:
+      - logger.log:
+          format: "input timeout: '%s', started by '%c'"
+          args: [ 'x.c_str()', "(start == 0 ? '~' : start)" ]
+
+cover:
+  - platform: feedback
+    id: porton
+    name: "${friendly_name} Portón Principal"
+    max_duration: 45s
+
+    open_action:
+      - switch.turn_on: abre_porton
+    open_duration: 30s
+    open_endstop: open_endstop
+    #open_sensor: open_movement_binary_sensor
+
+    close_action:
+      - switch.turn_on: cierra_porton
+    close_duration: 30s
+    close_endstop: close_endstop
+    #close_sensor: close_movement_binary_sensor
+
+    stop_action:
+      - logger.log: "Debo detener apertura o cierre"
+      # - switch.turn_off: open_cover_switch
+      # - switch.turn_off: close_cover_switch
+
+
+  # - platform: endstop
+  #   id: porton
+  #   name: "${friendly_name} Portón Principal"
+  #   open_action:
+  #     - switch.turn_on: abre_porton
+  #   open_duration: 30s
+  #   open_endstop: open_endstop
+
+  #   close_action:
+  #     - switch.turn_on: cierra_porton
+  #   close_duration: 30s
+  #   close_endstop: close_endstop
+
+  #   stop_action:
+  #     - logger.log: "Debo detener apertura o cierre"
