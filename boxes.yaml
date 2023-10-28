@@ -1,6 +1,4 @@
 substitutions:
-  name: box01
-  friendly_name: Box1
 
 wifi:
   networks:
