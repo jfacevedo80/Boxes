@@ -2,15 +2,6 @@ substitutions:
   name: box01
   friendly_name: Box1
 
-esphome:
-  name: $name
-  platform: ESP32
-  board: nodemcu-32s
-  name_add_mac_suffix: false
-  project:
-    name: jfacevedo80.boxes
-    version: "1.2"
-
 wifi:
   networks:
     - ssid: !secret wifi_ssid_iot
@@ -22,6 +13,23 @@ wifi:
   ap:
     ssid: "${friendly_name} Fallback Hotspot"
     password: "12345678"
+
+packages:
+  ##### download esphome code from Github
+  remote_package:
+    url: https://github.com/jfacevedo80/Boxes
+    ref: main
+    files: [boxes.yaml]
+    refresh: 300s
+
+esphome:
+  name: $name
+  platform: ESP32
+  board: nodemcu-32s
+  name_add_mac_suffix: false
+  project:
+    name: jfacevedo80.Boxes
+    version: "1.2"
 
 web_server:
   port: 80
@@ -35,6 +43,9 @@ ota:
   password: ""
 
 captive_portal: 
+
+dashboard_import:
+  package_import_url: github://jfacevedo80/Boxes/master/boxes.yaml
 
 improv_serial:
 
