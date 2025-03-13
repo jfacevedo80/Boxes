@@ -6,12 +6,13 @@ substitutions:
 
 esphome:
   name: $name
-  platform: ESP32
-  board: nodemcu-32s
   name_add_mac_suffix: false
   project:
     name: jfacevedo80.Boxes
     version: "1.2"
+
+esp32:
+  board: nodemcu-32s
 
 web_server:
   port: 80
