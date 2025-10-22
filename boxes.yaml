@@ -13,7 +13,9 @@ esphome:
 
 esp32:
   board: nodemcu-32s
-
+  framework:
+    type: esp-idf
+    
 web_server:
   port: 80
 
